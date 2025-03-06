@@ -6,6 +6,7 @@ import torch
 import numpy as np
 from pathlib import Path
 import sys
+from typing import Dict, List, Tuple, Optional, Union, Any
 import yaml
 
 # Add src to Python path
@@ -91,7 +92,7 @@ class EarthSystemSimulation:
             device=self.device
         )
         
-    def _initialize_states(self):
+    def _initialize_states(self) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """Initialize states for all components."""
         # Create initial states based on configuration
         physical_state = torch.randn(
@@ -194,13 +195,16 @@ class EarthSystemSimulation:
         self,
         num_steps: int,
         save_frequency: int = 100
-    ):
+    ) -> Dict[str, List]:
         """
         Run the full simulation for a specified number of steps.
         
         Args:
             num_steps: Number of timesteps to simulate
             save_frequency: How often to save states
+            
+        Returns:
+            Dictionary containing simulation trajectory
         """
         # Initialize states
         physical_state, biosphere_state, geosphere_state = self._initialize_states()
