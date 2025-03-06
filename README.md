@@ -221,15 +221,15 @@ If you use this code in your research, please cite:
   title = {Earth System Simulation},
   author = {Your Name},
   year = {2025},
-  url = {https://github.com/yourusername/earth_system_sim}
+  url = {https://github.com/Teo-Papas/earth_system_sim}
 }
 ```
 
 ## Contact
 
 For questions or collaboration opportunities, please contact:
-- Email: your.email@example.com
-- GitHub: @yourusername
+- Email: Papastertheof@gmail.com
+- GitHub: 166628481+Teo-Papas@users.noreply.github.com
 
 ## Acknowledgments
 
