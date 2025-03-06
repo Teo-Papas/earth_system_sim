@@ -1,136 +1,109 @@
-# Earth System Simulation Configuration
+# Model Configuration
 
-# Grid dimensions
-grid_height: 32
-grid_width: 32
+# Grid parameters
+grid_height: 16
+grid_width: 16
 
-# Physical system (PINN) configuration
+# Physical system configuration
 physical_system:
-  input_dim: 5  # temperature, pressure, humidity, wind_u, wind_v
-  hidden_dims: [64, 64, 32]
+  input_dim: 5  # temperature, pressure, humidity, u_wind, v_wind
+  hidden_dims: [32, 32]
   kernel_size: 3
-  num_layers: 3
-  physics_weights:
-    mass: 1.0
-    energy: 1.0
-    momentum: 1.0
-  training:
-    learning_rate: 0.001
-    batch_size: 16
-    physics_loss_weight: 0.5
-    observation_loss_weight: 0.5
-
-# Biosphere configuration
-biosphere:
-  state_dim: 5  # vegetation, soil_moisture, carbon_flux, temperature, humidity
-  action_dim: 3  # vegetation_change, moisture_change, carbon_flux_change
-  hidden_dims: [128, 64]
-  training:
-    learning_rate: 0.0003
-    gamma: 0.99
-    gae_lambda: 0.95
-    clip_range: 0.2
-    value_loss_coef: 0.5
-    entropy_coef: 0.01
-    max_grad_norm: 0.5
-    num_epochs: 4
-    batch_size: 64
-
-# Geosphere configuration
-geosphere:
-  state_dim: 3  # topography, soil_type, erosion_rate
-  action_dim: 2  # erosion_modifier, soil_development
-  hidden_dim: 64
   num_layers: 2
-  training:
-    learning_rate: 0.0001
-    gamma: 0.999
-    gae_lambda: 0.98
-    clip_range: 0.1
-    value_loss_coef: 0.5
-    entropy_coef: 0.005
-    max_grad_norm: 0.5
-    num_epochs: 2
-    batch_size: 32
+  learning_rate: 0.001
+  physics_weight: 1.0
 
-# Integration settings
+# Biosphere system configuration
+biosphere:
+  state_dim: 4  # vegetation, soil_moisture, carbon_flux, biodiversity
+  action_dim: 2  # growth_rate, resource_allocation
+  hidden_dims: [64, 32]
+  learning_rate: 0.001
+  reward_scale: 1.0
+
+# Geosphere system configuration
+geosphere:
+  state_dim: 3  # elevation, erosion_rate, soil_composition
+  action_dim: 2  # erosion_resistance, deposition_rate
+  hidden_dim: 32  
+  memory_size: 1000
+  batch_size: 32
+  learning_rate: 0.0001
+
+# Integration parameters
 integration:
-  temporal:
-    buffer_size: 1000
-    interpolation_method: "linear"
+  # Time scales (in simulation steps)
+  timescales:
+    physical: 1
+    biosphere: 10
+    geosphere: 100
   
-  data_flow:
-    physical_to_bio:
-      - source: ["temperature", "humidity"]
-        target: ["temperature_bio", "humidity_bio"]
-        scale_factors:
-          temperature: 0.003333  # 1/300 for normalization
-          humidity: 1.0
-    
-    bio_to_physical:
-      - source: ["vegetation"]
-        target: ["surface_roughness"]
-        scale_factor: 0.1
-    
-    physical_to_geo:
-      - source: ["temperature", "pressure"]
-        target: ["temp_geo", "pressure_geo"]
-        scale_factors:
-          temperature: 0.003333
-          pressure: 0.00001  # 1/100000 for normalization
-    
-    geo_to_physical:
-      - source: ["topography"]
-        target: ["surface_height"]
-        scale_factor: 0.001  # km to m
+  # Component interaction weights
+  interaction_weights:
+    physical_to_biosphere: 1.0
+    physical_to_geosphere: 0.5
+    biosphere_to_physical: 0.8
+    geosphere_to_physical: 0.3
 
-# Simulation settings
+# Simulation parameters
 simulation:
-  num_steps: 10000
-  save_frequency: 100
-  random_seed: 42
-  device: "cuda"  # or "cpu"
+  # Random seed for reproducibility
+  seed: 42
   
   # Initial conditions
   initial_conditions:
-    physical:
-      temperature_range: [270, 300]  # K
-      pressure_range: [95000, 105000]  # Pa
-      humidity_range: [0.3, 0.7]  # normalized
-      wind_range: [-10, 10]  # m/s
+    temperature_mean: 288.0  # K
+    temperature_std: 5.0
+    pressure_mean: 101325.0  # Pa
+    pressure_std: 1000.0
+    humidity_mean: 0.6
+    humidity_std: 0.1
+    wind_speed_mean: 5.0  # m/s
+    wind_speed_std: 2.0
     
-    biosphere:
-      vegetation_cover: 0.5  # normalized
-      soil_moisture: 0.5  # normalized
-      carbon_flux: 0.0  # normalized
+    vegetation_cover_mean: 0.3
+    vegetation_cover_std: 0.1
+    soil_moisture_mean: 0.4
+    soil_moisture_std: 0.1
     
-    geosphere:
-      mean_elevation: 500  # meters
-      soil_type_distribution: "random"
-      erosion_rate: 0.001  # mm/year
+    elevation_mean: 500.0  # m
+    elevation_std: 100.0
+    
+  # Physical constraints
+  constraints:
+    min_temperature: 200.0  # K
+    max_temperature: 330.0
+    min_pressure: 50000.0  # Pa
+    max_pressure: 110000.0
+    min_humidity: 0.0
+    max_humidity: 1.0
+    max_wind_speed: 50.0  # m/s
+    
+    min_vegetation: 0.0
+    max_vegetation: 1.0
+    min_soil_moisture: 0.0
+    max_soil_moisture: 1.0
+    
+    min_elevation: 0.0
+    max_elevation: 8848.0  # Mt. Everest height
 
-# Validation settings
-validation:
-  physical:
-    temperature_range: [180, 330]  # K
-    pressure_range: [0, 110000]  # Pa
-    humidity_range: [0, 1]  # normalized
-    wind_range: [-100, 100]  # m/s
+# Visualization parameters
+visualization:
+  # Update frequency
+  update_freq: 10
   
-  biosphere:
-    vegetation_range: [0, 1]
-    soil_moisture_range: [0, 1]
-    carbon_flux_range: [-1, 1]
+  # Color maps
+  colormaps:
+    temperature: 'RdBu_r'
+    vegetation: 'YlGn'
+    elevation: 'terrain'
   
-  geosphere:
-    elevation_range: [-1000, 9000]  # meters
-    soil_type_range: [0, 1]  # normalized
-    erosion_rate_range: [0, 1]  # normalized
-
-# Logging settings
-logging:
-  level: "INFO"
-  save_dir: "logs"
-  tensorboard:
-    log_dir: "runs"
-    update_frequency: 100
+  # Animation parameters
+  animation:
+    fps: 30
+    duration: 10  # seconds
+    
+  # Plot parameters
+  plot:
+    dpi: 100
+    figsize: [10, 6]
