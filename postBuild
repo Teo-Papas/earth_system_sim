@@ -1,0 +1,46 @@
+#!/bin/bash
+
+# Make postBuild executable
+chmod +x postBuild
+
+# Install additional Jupyter lab extensions
+jupyter labextension install @jupyter-widgets/jupyterlab-manager
+jupyter labextension install plotlywidget
+jupyter labextension install @bokeh/jupyter_bokeh
+
+# Create necessary directories
+mkdir -p visualizations
+mkdir -p sample_outputs
+
+# Set up pre-commit hooks
+if [ -f ".git/hooks/pre-commit" ]; then
+    chmod +x .git/hooks/pre-commit
+fi
+
+# Initialize configuration
+python -c "
+import yaml
+import os
+
+# Ensure config directory exists
+os.makedirs('config', exist_ok=True)
+
+# Create reduced configuration for Binder
+config = {
+    'grid_height': 16,
+    'grid_width': 16,
+    'physical_system': {
+        'input_dim': 5,
+        'hidden_dims': [32, 32],
+        'kernel_size': 3,
+        'num_layers': 2
+    }
+}
+
+# Save reduced configuration
+with open('config/binder_config.yaml', 'w') as f:
+    yaml.dump(config, f)
+"
+
+# Set up example notebooks
+jupyter trust examples/*.ipynb

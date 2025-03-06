@@ -1,0 +1,189 @@
+# Visualization Configuration for Earth System Simulation
+
+# General settings
+general:
+  dpi: 150
+  font_size: 12
+  style: 'seaborn'  # Use seaborn style for better-looking plots
+  interactive: true  # Enable interactive features where applicable
+  animation_fps: 30
+  save_format: 'png'  # Default format for static plots
+
+# Color schemes
+colors:
+  temperature:
+    - '#313695'  # Cold (blue)
+    - '#4575b4'
+    - '#74add1'
+    - '#abd9e9'
+    - '#fee090'
+    - '#fdae61'
+    - '#f46d43'
+    - '#d73027'  # Hot (red)
+    
+  vegetation:
+    - '#8c510a'  # Barren (brown)
+    - '#bf812d'
+    - '#dfc27d'
+    - '#f6e8c3'
+    - '#c7eae5'
+    - '#80cdc1'
+    - '#35978f'
+    - '#01665e'  # Dense vegetation (green)
+    
+  elevation:
+    - '#276419'  # Low elevation (green)
+    - '#4d9221'
+    - '#7fbc41'
+    - '#b8e186'
+    - '#e6f5d0'
+    - '#f6e8c3'
+    - '#dfc27d'
+    - '#bf812d'
+    - '#8c510a'
+    - '#543005'  # High elevation (brown)
+
+# Physical system visualization
+physical:
+  temperature_field:
+    levels: 20
+    contour_width: 0.5
+    colorbar_label: 'Temperature (K)'
+    
+  wind_field:
+    quiver_scale: 50
+    quiver_width: 0.005
+    skip: 2  # Plot every nth point
+    
+  pressure_field:
+    levels: 20
+    streamline_density: 2
+    streamline_color: 'white'
+    
+  energy_spectrum:
+    yscale: 'log'
+    xscale: 'log'
+    grid: true
+
+# Biosphere visualization
+biosphere:
+  vegetation_map:
+    interpolation: 'nearest'
+    aspect: 'equal'
+    colorbar_label: 'Vegetation Density'
+    
+  carbon_flux:
+    line_width: 2
+    grid: true
+    fill_alpha: 0.3
+    
+  correlation_plot:
+    marker_size: 50
+    alpha: 0.6
+    grid: true
+
+# Geosphere visualization
+geosphere:
+  topography_3d:
+    view_angle: [30, 45]  # elevation, azimuth
+    shade: true
+    antialiased: true
+    
+  erosion_animation:
+    interval: 500  # milliseconds
+    colorbar: true
+    
+  geological_section:
+    line_width: 2
+    fill_alpha: 0.5
+    grid: true
+
+# Animation settings
+animations:
+  wind_field:
+    interval: 100
+    frames: 100
+    
+  vegetation:
+    interval: 200
+    frames: 50
+    
+  erosion:
+    interval: 500
+    frames: 30
+
+# Interactive plots
+interactive:
+  temperature_evolution:
+    template: 'plotly_white'
+    height: 600
+    width: 1000
+    
+  ecosystem_dashboard:
+    template: 'plotly_white'
+    height: 800
+    width: 1200
+    
+  topography_viewer:
+    template: 'plotly_white'
+    height: 800
+    width: 1200
+
+# Output settings
+output:
+  static:
+    dpi: 300
+    bbox_inches: 'tight'
+    format: 'png'
+    
+  animation:
+    fps: 30
+    bitrate: 2000
+    codec: 'h264'
+    
+  interactive:
+    include_plotlyjs: 'cdn'
+    include_mathjax: 'cdn'
+    auto_open: false
+
+# Figure sizes (in inches)
+figure_sizes:
+  default: [10, 6]
+  wide: [15, 6]
+  square: [8, 8]
+  tall: [8, 10]
+  large: [12, 8]
+
+# Label settings
+labels:
+  font_size: 12
+  title_size: 14
+  axis_size: 10
+  legend_size: 10
+  
+  title_pad: 10
+  label_pad: 5
+  
+  grid: true
+  grid_alpha: 0.3
+  grid_style: '--'
+
+# Legend settings
+legend:
+  location: 'best'
+  frame_alpha: 0.8
+  columns: 1
+  font_size: 10
+
+# Additional visualization features
+features:
+  add_timestamps: true
+  add_colorbars: true
+  add_gridlines: true
+  add_scalebar: true
+  
+  timestamp_format: '%Y-%m-%d %H:%M:%S'
+  scalebar_length: 1000  # meters
+  
+  save_metadata: true
+  compress_animations: true

@@ -1,0 +1,19 @@
+name: earth-system-sim
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.8
+  - pip>=21.0
+  - numpy>=1.19.0
+  - pytorch>=1.8.0
+  - matplotlib>=3.3.0
+  - pyyaml>=5.4.0
+  - jupyter>=1.0.0
+  - plotly>=4.14.0
+  - holoviews>=1.14.0
+  - pytest>=6.2.0
+  - scipy>=1.6.0
+  - tqdm>=4.50.0
+  - pip:
+    - tensorboard>=2.4.0
