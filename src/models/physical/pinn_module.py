@@ -1,215 +1,214 @@
 """
-Physics-Informed Neural Network (PINN) module for the physical system simulation.
-This module combines ConvLSTM-based learning with physics-informed constraints.
+Physics-Informed Neural Network (PINN) implementation for physical system modeling.
 """
 
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
-from typing import Dict, List, Tuple, Optional
-from .conv_lstm import ConvLSTM
+from typing import Tuple, Dict, Optional
 
-class PhysicalConstraints:
-    """
-    Physical constraints implementation for the atmosphere/ocean system.
-    Includes conservation laws and boundary conditions.
-    """
+class PhysicsConstraints:
+    """Physics-based constraints for the PINN model."""
+    
     @staticmethod
     def mass_conservation(state: torch.Tensor) -> torch.Tensor:
         """
-        Compute mass conservation constraint violation.
-        Assumes state includes density-like quantities.
+        Apply mass conservation constraint.
         
         Args:
-            state: Tensor of shape (batch, channels, height, width)
+            state: Input tensor of shape (batch_size, channels, height, width)
             
         Returns:
-            Scalar tensor representing constraint violation
+            Conservation loss value
         """
-        # Example: In a closed system, total mass should remain constant
-        # Here we check if the total density variation is minimal
-        total_mass = torch.sum(state, dim=(2, 3))  # sum over spatial dimensions
-        mass_variation = torch.std(total_mass, dim=1)  # variation over batch
-        return torch.mean(mass_variation)
+        # Extract density from state
+        density = state[:, 0:1]  # First channel assumed to be density
+        
+        # Calculate divergence over spatial dimensions
+        dx = torch.diff(density, dim=-1, prepend=density[..., :1])
+        dy = torch.diff(density, dim=-2, prepend=density[..., :1, :])
+        
+        # Mass conservation implies divergence should be zero
+        return torch.mean(dx**2 + dy**2)
     
     @staticmethod
     def energy_conservation(
-        state: torch.Tensor,
+        prev_state: torch.Tensor,
         temperature: torch.Tensor,
         velocity: torch.Tensor
     ) -> torch.Tensor:
         """
-        Compute energy conservation constraint violation.
+        Apply energy conservation constraint.
         
         Args:
-            state: Full state tensor
+            prev_state: Previous state tensor
             temperature: Temperature field
-            velocity: Velocity field (u, v components)
+            velocity: Velocity field
             
         Returns:
-            Scalar tensor representing constraint violation
+            Conservation loss value
         """
-        # Kinetic energy from velocity
-        kinetic_energy = 0.5 * torch.sum(velocity ** 2, dim=1)
+        # Calculate kinetic energy
+        kinetic_energy = 0.5 * torch.sum(velocity**2, dim=1, keepdim=True)
         
-        # Internal energy (proportional to temperature)
-        internal_energy = temperature
+        # Calculate thermal energy (simplified)
+        thermal_energy = temperature
         
-        # Total energy should be conserved (constant)
-        total_energy = kinetic_energy + internal_energy
-        energy_variation = torch.std(total_energy, dim=(1, 2))
-        return torch.mean(energy_variation)
+        # Total energy should be conserved
+        total_energy = kinetic_energy + thermal_energy
+        prev_energy = torch.sum(prev_state, dim=1, keepdim=True)
+        
+        return torch.mean((total_energy - prev_energy)**2)
     
     @staticmethod
     def momentum_conservation(
         velocity: torch.Tensor,
-        density: torch.Tensor,
         pressure: torch.Tensor
     ) -> torch.Tensor:
         """
-        Compute momentum conservation constraint violation.
+        Apply momentum conservation constraint.
         
         Args:
-            velocity: Velocity field (u, v components)
-            density: Density field
-            pressure: Pressure field
+            velocity: Velocity field tensor
+            pressure: Pressure field tensor
             
         Returns:
-            Scalar tensor representing constraint violation
+            Conservation loss value
         """
-        # Compute momentum (density * velocity)
-        momentum = density.unsqueeze(1) * velocity
+        # Calculate pressure gradient
+        dx_p = torch.diff(pressure, dim=-1, prepend=pressure[..., :1])
+        dy_p = torch.diff(pressure, dim=-2, prepend=pressure[..., :1, :])
         
-        # Pressure gradients
-        pressure_grad = torch.gradient(pressure, dim=(2, 3))
-        pressure_force = torch.stack(pressure_grad, dim=1)
+        # Calculate velocity gradients
+        dx_v = torch.diff(velocity, dim=-1, prepend=velocity[..., :1])
+        dy_v = torch.diff(velocity, dim=-2, prepend=velocity[..., :1, :])
         
-        # Momentum should be conserved when accounting for pressure forces
-        momentum_change = torch.sum(momentum + pressure_force, dim=(2, 3))
-        momentum_violation = torch.std(momentum_change, dim=1)
-        return torch.mean(momentum_violation)
+        # Momentum conservation implies balance of forces
+        return torch.mean(dx_p**2 + dy_p**2 + dx_v**2 + dy_v**2)
 
 class PINN(nn.Module):
     """
-    Physics-Informed Neural Network for atmospheric/oceanic modeling.
-    Combines ConvLSTM-based learning with physical constraints.
+    Physics-Informed Neural Network for physical system modeling.
     """
+    
     def __init__(
         self,
         input_dim: int,
-        hidden_dims: List[int],
-        kernel_size: int,
-        num_layers: int,
-        physics_weights: Dict[str, float] = None
+        hidden_dims: list,
+        kernel_size: int = 3,
+        num_layers: int = 3
     ):
         """
-        Initialize the PINN module.
+        Initialize PINN model.
         
         Args:
             input_dim: Number of input channels
-            hidden_dims: List of hidden dimensions for ConvLSTM layers
-            kernel_size: Size of convolutional kernels
-            num_layers: Number of ConvLSTM layers
-            physics_weights: Dictionary of weights for different physical constraints
+            hidden_dims: List of hidden dimensions
+            kernel_size: Convolution kernel size
+            num_layers: Number of conv layers
         """
-        super(PINN, self).__init__()
+        super().__init__()
         
-        # Default physics weights if not provided
-        self.physics_weights = physics_weights or {
+        self.input_dim = input_dim
+        self.hidden_dims = hidden_dims
+        self.num_layers = num_layers
+        
+        # Create convolutional layers
+        self.conv_layers = nn.ModuleList()
+        
+        # Input layer
+        self.conv_layers.append(
+            nn.Conv2d(
+                input_dim,
+                hidden_dims[0],
+                kernel_size,
+                padding='same'
+            )
+        )
+        
+        # Hidden layers
+        for i in range(len(hidden_dims) - 1):
+            self.conv_layers.append(
+                nn.Conv2d(
+                    hidden_dims[i],
+                    hidden_dims[i + 1],
+                    kernel_size,
+                    padding='same'
+                )
+            )
+        
+        # Output layer
+        self.output_layer = nn.Conv2d(
+            hidden_dims[-1],
+            input_dim,
+            kernel_size,
+            padding='same'
+        )
+        
+        # Activation function
+        self.activation = nn.ReLU()
+        
+        # Physics constraints
+        self.constraints = PhysicsConstraints()
+        
+        # Physics loss weights
+        self.physics_weights = {
             'mass': 1.0,
             'energy': 1.0,
             'momentum': 1.0
         }
         
-        # ConvLSTM for spatiotemporal modeling
-        self.convlstm = ConvLSTM(
-            input_dim=input_dim,
-            hidden_dims=hidden_dims,
-            kernel_size=kernel_size,
-            num_layers=num_layers,
-            batch_first=True,
-            return_sequence=True
-        )
-        
-        # Output projection to match input dimensions
-        self.projection = nn.Conv2d(
-            in_channels=hidden_dims[-1],
-            out_channels=input_dim,
-            kernel_size=1
-        )
-        
-        # Physical constraints handler
-        self.constraints = PhysicalConstraints()
-        
     def forward(
         self,
         x: torch.Tensor,
-        hidden_states: Optional[List[Tuple[torch.Tensor, torch.Tensor]]] = None
+        hidden_states: Optional[torch.Tensor] = None
     ) -> Tuple[torch.Tensor, Dict[str, torch.Tensor]]:
         """
-        Forward pass computing both predictions and physical constraint violations.
+        Forward pass.
         
         Args:
-            x: Input tensor of shape (batch, seq_len, channels, height, width)
-            hidden_states: Optional initial hidden states
+            x: Input tensor of shape (batch_size, seq_len, channels, height, width)
+            hidden_states: Optional hidden states
             
         Returns:
             Tuple of (predictions, physics_losses)
         """
-        # Get ConvLSTM output
-        lstm_out, hidden_states = self.convlstm(x, hidden_states)
+        batch_size, seq_len = x.shape[:2]
+        predictions = []
         
-        # Project to input space
-        batch_size, seq_len, _, height, width = lstm_out.size()
-        lstm_out = lstm_out.reshape(-1, lstm_out.size(2), height, width)
-        projected = self.projection(lstm_out)
-        predictions = projected.reshape(batch_size, seq_len, -1, height, width)
+        for t in range(seq_len):
+            # Current input
+            current_input = x[:, t]
+            
+            # Pass through conv layers
+            h = current_input
+            for conv in self.conv_layers:
+                h = self.activation(conv(h))
+            
+            # Generate prediction
+            pred = self.output_layer(h)
+            predictions.append(pred)
         
-        # Extract relevant fields for physical constraints
-        # Assuming specific channel ordering in predictions
-        last_state = predictions[:, -1]  # Use last timestep for constraints
-        density = last_state[:, 0]  # Density channel
-        temperature = last_state[:, 1]  # Temperature channel
-        velocity = last_state[:, 2:4]  # U, V velocity components
-        pressure = last_state[:, 4]  # Pressure channel
+        # Stack predictions
+        predictions = torch.stack(predictions, dim=1)
         
-        # Compute physical constraints
+        # Calculate physics losses
+        last_state = x[:, -1]  # Last input state
+        last_pred = predictions[:, -1]  # Last prediction
+        
+        # Extract physical variables from prediction
+        # Assuming channels are: [density, temperature, pressure, u_velocity, v_velocity]
+        density = last_pred[:, 0:1]
+        temperature = last_pred[:, 1:2]
+        pressure = last_pred[:, 2:3]
+        velocity = last_pred[:, 3:5]
+        
         physics_losses = {
-            'mass': self.physics_weights['mass'] * 
+            'mass': self.physics_weights['mass'] *
                    self.constraints.mass_conservation(density),
-            'energy': self.physics_weights['energy'] * 
+            'energy': self.physics_weights['energy'] *
                      self.constraints.energy_conservation(last_state, temperature, velocity),
-            'momentum': self.physics_weights['momentum'] * 
-                       self.constraints.momentum_conservation(velocity, density, pressure)
+            'momentum': self.physics_weights['momentum'] *
+                       self.constraints.momentum_conservation(velocity, pressure)
         }
         
         return predictions, physics_losses
-    
-    def compute_loss(
-        self,
-        predictions: torch.Tensor,
-        targets: torch.Tensor,
-        physics_losses: Dict[str, torch.Tensor],
-        data_loss_weight: float = 1.0
-    ) -> torch.Tensor:
-        """
-        Compute total loss combining data mismatch and physical constraints.
-        
-        Args:
-            predictions: Model predictions
-            targets: Target values
-            physics_losses: Dictionary of physical constraint violations
-            data_loss_weight: Weight for data mismatch loss
-            
-        Returns:
-            Total loss combining data and physics terms
-        """
-        # Data mismatch loss
-        data_loss = F.mse_loss(predictions, targets)
-        
-        # Combine losses
-        total_loss = data_loss_weight * data_loss
-        for loss_value in physics_losses.values():
-            total_loss = total_loss + loss_value
-            
-        return total_loss

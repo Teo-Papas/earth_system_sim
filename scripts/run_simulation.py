@@ -95,22 +95,43 @@ class EarthSystemSimulation:
     def _initialize_states(self) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """Initialize states for all components."""
         # Create initial states based on configuration
-        physical_state = torch.randn(
-            1, self.config['physical_system']['input_dim'],
+        mean = self.config['simulation']['initial_conditions']
+        
+        # Physical state: [density, temperature, pressure, u_velocity, v_velocity]
+        physical_state = torch.zeros(
+            1,  # batch size
+            self.config['physical_system']['input_dim'],
             self.config['grid_height'],
             self.config['grid_width'],
             device=self.device
         )
         
-        biosphere_state = torch.zeros(
-            1, self.config['biosphere']['state_dim'],
-            device=self.device
-        )
+        # Initialize with mean values
+        physical_state[:, 0] = mean['pressure_mean']  # density
+        physical_state[:, 1] = mean['temperature_mean']  # temperature
+        physical_state[:, 2] = mean['pressure_mean']  # pressure
+        physical_state[:, 3] = mean['wind_speed_mean']  # u velocity
+        physical_state[:, 4] = mean['wind_speed_mean']  # v velocity
         
-        geosphere_state = torch.zeros(
-            1, self.config['geosphere']['state_dim'],
+        # Add some random variation
+        physical_state += torch.randn_like(physical_state) * 0.1
+        
+        # Biosphere state
+        biosphere_state = torch.zeros(
+            1,  # batch size
+            self.config['biosphere']['state_dim'],
             device=self.device
         )
+        biosphere_state[0, 0] = mean['vegetation_cover_mean']
+        biosphere_state[0, 1] = mean['soil_moisture_mean']
+        
+        # Geosphere state
+        geosphere_state = torch.zeros(
+            1,  # batch size
+            self.config['geosphere']['state_dim'],
+            device=self.device
+        )
+        geosphere_state[0, 0] = mean['elevation_mean']
         
         # Update state buffers
         self.data_flow.update_state('physical', physical_state)
@@ -141,13 +162,15 @@ class EarthSystemSimulation:
         
         # Physical system update (every timestep)
         if updates['physical']:
-            # Get feedback from other components
-            physical_feedback = self.data_flow.compute_feedback('physical')
+            # Prepare input for PINN (add sequence dimension)
+            physical_input = physical_state.unsqueeze(1)  # [batch, seq=1, channels, height, width]
             
             # Update physical state using PINN
-            physical_pred, _ = self.physical(physical_state.unsqueeze(1))
-            physical_state = physical_pred[:, -1]  # Take last timestep
+            physical_pred, _ = self.physical(physical_input)
+            physical_state = physical_pred.squeeze(1)  # Remove sequence dimension
             
+            # Get feedback from other components
+            physical_feedback = self.data_flow.compute_feedback('physical')
             if physical_feedback is not None:
                 physical_state = physical_state + physical_feedback
                 
@@ -160,34 +183,36 @@ class EarthSystemSimulation:
             # Get relevant physical state information
             bio_input = self.data_flow.get_state_for_component('physical', 'biosphere')
             
-            # Sample action from policy
-            bio_action, _, _ = self.biosphere.act(
-                torch.cat([biosphere_state, bio_input], dim=-1)
-            )
-            
-            # Update biosphere state
-            biosphere_state = biosphere_state + bio_action
-            
-            # Validate and update state
-            if self.data_flow.validate_state('biosphere', biosphere_state):
-                self.data_flow.update_state('biosphere', biosphere_state)
+            if bio_input is not None:
+                # Sample action from policy
+                bio_action = self.biosphere.act(
+                    torch.cat([biosphere_state, bio_input], dim=-1)
+                )[0]
+                
+                # Update biosphere state
+                biosphere_state = biosphere_state + bio_action
+                
+                # Validate and update state
+                if self.data_flow.validate_state('biosphere', biosphere_state):
+                    self.data_flow.update_state('biosphere', biosphere_state)
         
         # Geosphere update (least frequent)
         if updates['geosphere']:
             # Get relevant physical state information
             geo_input = self.data_flow.get_state_for_component('physical', 'geosphere')
             
-            # Sample action from policy
-            geo_action, _, _ = self.geosphere.act(
-                torch.cat([geosphere_state, geo_input], dim=-1)
-            )
-            
-            # Update geosphere state
-            geosphere_state = geosphere_state + geo_action
-            
-            # Validate and update state
-            if self.data_flow.validate_state('geosphere', geosphere_state):
-                self.data_flow.update_state('geosphere', geosphere_state)
+            if geo_input is not None:
+                # Sample action from policy
+                geo_action = self.geosphere.act(
+                    torch.cat([geosphere_state, geo_input], dim=-1)
+                )[0]
+                
+                # Update geosphere state
+                geosphere_state = geosphere_state + geo_action
+                
+                # Validate and update state
+                if self.data_flow.validate_state('geosphere', geosphere_state):
+                    self.data_flow.update_state('geosphere', geosphere_state)
         
         return physical_state, biosphere_state, geosphere_state
     
@@ -217,6 +242,12 @@ class EarthSystemSimulation:
             'times': []
         }
         
+        # Save initial states
+        trajectory['physical'].append(physical_state.cpu().numpy())
+        trajectory['biosphere'].append(biosphere_state.cpu().numpy())
+        trajectory['geosphere'].append(geosphere_state.cpu().numpy())
+        trajectory['times'].append(self.synchronizer.current_times)
+        
         for step in range(num_steps):
             # Run one timestep
             physical_state, biosphere_state, geosphere_state = self.run_timestep(
@@ -228,9 +259,7 @@ class EarthSystemSimulation:
                 trajectory['physical'].append(physical_state.cpu().numpy())
                 trajectory['biosphere'].append(biosphere_state.cpu().numpy())
                 trajectory['geosphere'].append(geosphere_state.cpu().numpy())
-                trajectory['times'].append({
-                    name: time for name, time in self.synchronizer.current_times.items()
-                })
+                trajectory['times'].append(self.synchronizer.current_times)
                 
                 print(f"Step {step}/{num_steps}")
                 
