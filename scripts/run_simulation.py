@@ -194,14 +194,25 @@ class EarthSystemSimulation:
                 print(f"Bio input shape from physical: {bio_input.shape}")
                 print(f"Biosphere actor first layer weight shape: {self.biosphere.actor[0].weight.shape}")
                 
-                # Sample action from policy using biosphere state
+                # Process physical input first
                 with torch.no_grad():
-                    print("Attempting policy network forward pass...")
+                    print("DEBUG - Processing physical input...")
                     try:
+                        # Project physical input to biosphere state space
+                        bio_feedback = torch.tanh(bio_input @ torch.randn(bio_input.shape[1], biosphere_state.shape[1], device=self.device))
+                        # Update state with physical influence
+                        biosphere_state = biosphere_state + 0.1 * bio_feedback
+                        print(f"Updated biosphere state shape: {biosphere_state.shape}")
+                        
+                        # Now get policy action using only biosphere state
                         bio_action = self.biosphere.act(biosphere_state)[0]
                         print(f"Bio action shape: {bio_action.shape}")
                     except Exception as e:
-                        print(f"Error in biosphere policy: {str(e)}")
+                        print(f"Error in biosphere update:")
+                        print(f"bio_input shape: {bio_input.shape}")
+                        print(f"biosphere_state shape: {biosphere_state.shape}")
+                        print(f"actor weight shape: {self.biosphere.actor[0].weight.shape}")
+                        print(f"Error: {str(e)}")
                         raise
                 
                 # Update biosphere state
@@ -222,14 +233,25 @@ class EarthSystemSimulation:
                 print(f"Geo input shape from physical: {geo_input.shape}")
                 print(f"Geosphere actor first layer weight shape: {self.geosphere.actor[0].weight.shape}")
                 
-                # Sample action from policy using geosphere state
+                # Process physical input first
                 with torch.no_grad():
-                    print("Attempting policy network forward pass...")
+                    print("DEBUG - Processing physical input...")
                     try:
+                        # Project physical input to geosphere state space
+                        geo_feedback = torch.tanh(geo_input @ torch.randn(geo_input.shape[1], geosphere_state.shape[1], device=self.device))
+                        # Update state with physical influence
+                        geosphere_state = geosphere_state + 0.1 * geo_feedback
+                        print(f"Updated geosphere state shape: {geosphere_state.shape}")
+                        
+                        # Now get policy action using only geosphere state
                         geo_action = self.geosphere.act(geosphere_state)[0]
                         print(f"Geo action shape: {geo_action.shape}")
                     except Exception as e:
-                        print(f"Error in geosphere policy: {str(e)}")
+                        print(f"Error in geosphere update:")
+                        print(f"geo_input shape: {geo_input.shape}")
+                        print(f"geosphere_state shape: {geosphere_state.shape}")
+                        print(f"actor weight shape: {self.geosphere.actor[0].weight.shape}")
+                        print(f"Error: {str(e)}")
                         raise
                 
                 # Update geosphere state
