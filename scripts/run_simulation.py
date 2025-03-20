@@ -70,16 +70,18 @@ class EarthSystemSimulation:
             num_layers=self.config['physical_system']['num_layers']
         ).to(self.device)
         
-        # Biosphere system
+        # Biosphere system - combined state dimension includes physical input
+        biosphere_input_dim = self.config['biosphere']['state_dim'] + self.config['physical_system']['input_dim']
         self.biosphere = BiospherePolicy(
-            state_dim=self.config['biosphere']['state_dim'],
+            state_dim=biosphere_input_dim,  # Combined dimensions for state + physical input
             action_dim=self.config['biosphere']['action_dim'],
             hidden_dims=self.config['biosphere']['hidden_dims']
         ).to(self.device)
         
-        # Geosphere system
+        # Geosphere system - combined state dimension includes physical input
+        geosphere_input_dim = self.config['geosphere']['state_dim'] + self.config['physical_system']['input_dim']
         self.geosphere = GeospherePolicy(
-            state_dim=self.config['geosphere']['state_dim'],
+            state_dim=geosphere_input_dim,  # Combined dimensions for state + physical input
             action_dim=self.config['geosphere']['action_dim'],
             hidden_dim=self.config['geosphere']['hidden_dim']
         ).to(self.device)
