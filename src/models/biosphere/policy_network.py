@@ -8,7 +8,7 @@ import torch.nn.functional as F
 from typing import Tuple, List, Optional
 
 class BiospherePolicy(nn.Module):
-    """Policy network for the biosphere system."""
+    """Policy network for biosphere system."""
     
     def __init__(
         self,
@@ -20,47 +20,67 @@ class BiospherePolicy(nn.Module):
         Initialize biosphere policy.
         
         Args:
-            state_dim: Input state dimension
-            action_dim: Output action dimension
+            state_dim: Input state dimension (vegetation, moisture, temp, pressure)
+            action_dim: Output action dimension (growth, water consumption)
             hidden_dims: List of hidden layer dimensions
         """
         super().__init__()
+        
+        if state_dim != 4:
+            raise ValueError(
+                f"BiospherePolicy expects state_dim=4 (vegetation, moisture, temp, pressure), "
+                f"got {state_dim}"
+            )
+            
         self.state_dim = state_dim
         self.action_dim = action_dim
         
         # Create actor network (policy)
-        actor_layers = []
-        current_dim = state_dim
-        for hidden_dim in hidden_dims:
-            actor_layers.extend([
-                nn.Linear(current_dim, hidden_dim),
-                nn.ReLU()
-            ])
-            current_dim = hidden_dim
-        actor_layers.append(nn.Linear(current_dim, action_dim))
-        
-        self.actor = nn.Sequential(*actor_layers)
+        self.actor = self._build_network(state_dim, action_dim, hidden_dims)
         
         # Create critic network (value function)
-        critic_layers = []
-        current_dim = state_dim
-        for hidden_dim in hidden_dims:
-            critic_layers.extend([
-                nn.Linear(current_dim, hidden_dim),
-                nn.ReLU()
-            ])
-            current_dim = hidden_dim
-        critic_layers.append(nn.Linear(current_dim, 1))
-        
-        self.critic = nn.Sequential(*critic_layers)
+        self.critic = self._build_network(state_dim, 1, hidden_dims)
         
         # Initialize action log standard deviation
         self.action_log_std = nn.Parameter(torch.zeros(action_dim))
         
-        # Set requires_grad=False for state normalization
+        # Register buffers for state normalization
         self.register_buffer('state_mean', torch.zeros(state_dim))
         self.register_buffer('state_std', torch.ones(state_dim))
         
+    def _build_network(
+        self,
+        input_dim: int,
+        output_dim: int,
+        hidden_dims: List[int]
+    ) -> nn.Sequential:
+        """Build a neural network with the given architecture."""
+        layers = []
+        current_dim = input_dim
+        
+        for hidden_dim in hidden_dims:
+            layers.extend([
+                nn.Linear(current_dim, hidden_dim),
+                nn.ReLU()
+            ])
+            current_dim = hidden_dim
+            
+        layers.append(nn.Linear(current_dim, output_dim))
+        return nn.Sequential(*layers)
+    
+    def _validate_input(self, state: torch.Tensor):
+        """Validate input state tensor."""
+        if state.dim() not in [1, 2]:
+            raise ValueError(
+                f"Expected state to have 1 or 2 dimensions, got {state.dim()}"
+            )
+            
+        if state.shape[-1] != self.state_dim:
+            raise ValueError(
+                f"Expected state to have {self.state_dim} features, got {state.shape[-1]}\n"
+                f"State shape: {state.shape}"
+            )
+    
     def normalize_state(self, state: torch.Tensor) -> torch.Tensor:
         """Normalize state using running statistics."""
         return (state - self.state_mean) / (self.state_std + 1e-8)
@@ -68,6 +88,8 @@ class BiospherePolicy(nn.Module):
     def update_normalization(self, state: torch.Tensor):
         """Update state normalization statistics."""
         with torch.no_grad():
+            if state.dim() == 1:
+                state = state.unsqueeze(0)
             self.state_mean = 0.99 * self.state_mean + 0.01 * state.mean(0)
             self.state_std = 0.99 * self.state_std + 0.01 * state.std(0)
     
@@ -86,17 +108,13 @@ class BiospherePolicy(nn.Module):
         Returns:
             Tuple of (action, value, action distribution)
         """
-        # Ensure state has correct dimensions
+        # Input validation
+        self._validate_input(state)
+        
+        # Ensure state has batch dimension
         if state.dim() == 1:
-            state = state.unsqueeze(0)  # Add batch dimension
-            
-        # Validate state dimensions
-        if state.shape[-1] != self.state_dim:
-            raise ValueError(
-                f"State has incorrect dimension. Expected {self.state_dim}, "
-                f"got {state.shape[-1]}. Full shape: {state.shape}"
-            )
-            
+            state = state.unsqueeze(0)
+        
         # Normalize state
         state = self.normalize_state(state)
         
@@ -131,6 +149,9 @@ class BiospherePolicy(nn.Module):
         Returns:
             Tuple of (log_probs, values, entropy)
         """
+        # Input validation
+        self._validate_input(states)
+        
         # Normalize states
         states = self.normalize_state(states)
         

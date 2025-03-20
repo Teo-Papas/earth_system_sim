@@ -1,5 +1,5 @@
 """
-Main script for running the Earth system simulation with all components.
+Main script for running the Earth system simulation.
 """
 
 import torch
@@ -29,40 +29,26 @@ def print_tensor_info(name: str, tensor: torch.Tensor):
     print()
 
 class EarthSystemSimulation:
-    """
-    Main simulation class that coordinates all components.
-    """
+    """Main simulation class that coordinates all components."""
+    
     def __init__(
         self,
         config_path: str,
         device: torch.device = None,
         debug: bool = False
     ):
-        """
-        Initialize simulation.
-        
-        Args:
-            config_path: Path to configuration file
-            device: Compute device to use
-            debug: Enable debug output
-        """
         self.device = device or torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         self.config = self._load_config(config_path)
         self.debug = debug
         
-        # Initialize components
         self._initialize_components()
-        
-        # Initialize integration
         self._initialize_integration()
         
     def _load_config(self, config_path: str) -> dict:
-        """Load configuration from YAML file."""
         with open(config_path, 'r') as f:
             return yaml.safe_load(f)
         
     def _initialize_components(self):
-        """Initialize all system components."""
         # Physical system (PINN)
         self.physical = PINN(
             input_dim=self.config['physical_system']['input_dim'],
@@ -86,8 +72,6 @@ class EarthSystemSimulation:
         ).to(self.device)
         
     def _initialize_integration(self):
-        """Initialize integration components."""
-        # Temporal synchronization
         self.timescales = create_default_timescales()
         self.synchronizer = TemporalSynchronizer(
             timescales=self.timescales,
@@ -99,7 +83,6 @@ class EarthSystemSimulation:
             device=self.device
         )
         
-        # Data flow management
         self.data_flow = DataFlowManager(
             component_configs=self.config,
             device=self.device
@@ -108,73 +91,55 @@ class EarthSystemSimulation:
     def _prepare_biosphere_input(
         self,
         biosphere_state: torch.Tensor,
-        physical_input: torch.Tensor
+        physical_state: torch.Tensor
     ) -> torch.Tensor:
-        """
-        Prepare input for biosphere policy.
-        
-        Args:
-            biosphere_state: Current biosphere state
-            physical_input: Physical system state
+        """Prepare input for biosphere policy."""
+        # Extract relevant physical metrics
+        with torch.no_grad():
+            temp_mean = physical_state[:, 1].mean()  # Temperature
+            pressure_mean = physical_state[:, 2].mean()  # Pressure
             
-        Returns:
-            Combined input tensor
-        """
-        # Extract relevant features from physical state
-        temp_mean = physical_input[:, 1].mean()  # Temperature
-        moisture_mean = physical_input[:, 2].mean()  # Moisture/pressure
-        
-        # Combine with current biosphere state
-        # [current_state, temperature, moisture]
-        combined_input = torch.cat([
-            biosphere_state,
-            temp_mean.unsqueeze(0).unsqueeze(0),
-            moisture_mean.unsqueeze(0).unsqueeze(0)
-        ], dim=1)
-        
-        if self.debug:
-            print_tensor_info("Biosphere input", combined_input)
+            # Use only the first 4 dimensions as specified in config
+            combined = torch.cat([
+                biosphere_state[:, :2],  # Original biosphere state (vegetation, moisture)
+                temp_mean.view(1, 1),    # Mean temperature
+                pressure_mean.view(1, 1)  # Mean pressure
+            ], dim=1)
             
-        return combined_input
+            if self.debug:
+                print_tensor_info("Biosphere input", combined)
+            
+            return combined
         
     def _initialize_states(self) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        """Initialize states for all components."""
         mean = self.config['simulation']['initial_conditions']
         
         # Physical state
         physical_state = torch.zeros(
-            1,  # batch size
+            1,
             self.config['physical_system']['input_dim'],
             self.config['grid_height'],
             self.config['grid_width'],
             device=self.device
         )
         
-        # Initialize with mean values
-        physical_state[:, 0] = mean['pressure_mean']  # density
-        physical_state[:, 1] = mean['temperature_mean']  # temperature
-        physical_state[:, 2] = mean['pressure_mean']  # pressure
-        physical_state[:, 3] = mean['wind_speed_mean']  # u velocity
-        physical_state[:, 4] = mean['wind_speed_mean']  # v velocity
+        physical_state[:, 0] = mean['pressure_mean']      # density
+        physical_state[:, 1] = mean['temperature_mean']   # temperature
+        physical_state[:, 2] = mean['pressure_mean']      # pressure
+        physical_state[:, 3] = mean['wind_speed_mean']    # u velocity
+        physical_state[:, 4] = mean['wind_speed_mean']    # v velocity
         
-        # Add some random variation
         physical_state += torch.randn_like(physical_state) * 0.1
         
         # Biosphere state
-        biosphere_state = torch.zeros(
-            1,  # batch size
-            self.config['biosphere']['state_dim'],
-            device=self.device
-        )
+        biosphere_state = torch.zeros(1, self.config['biosphere']['state_dim'], device=self.device)
         biosphere_state[0, 0] = mean['vegetation_cover_mean']
         biosphere_state[0, 1] = mean['soil_moisture_mean']
+        biosphere_state[0, 2] = mean['temperature_mean']  # for temperature tracking
+        biosphere_state[0, 3] = mean['pressure_mean']     # for pressure tracking
         
         # Geosphere state
-        geosphere_state = torch.zeros(
-            1,  # batch size
-            self.config['geosphere']['state_dim'],
-            device=self.device
-        )
+        geosphere_state = torch.zeros(1, self.config['geosphere']['state_dim'], device=self.device)
         geosphere_state[0, 0] = mean['elevation_mean']
         
         # Update state buffers
@@ -183,9 +148,9 @@ class EarthSystemSimulation:
         self.data_flow.update_state('geosphere', geosphere_state)
         
         if self.debug:
-            print_tensor_info("Initial physical state", physical_state)
-            print_tensor_info("Initial biosphere state", biosphere_state)
-            print_tensor_info("Initial geosphere state", geosphere_state)
+            print_tensor_info("Physical", physical_state)
+            print_tensor_info("Biosphere", biosphere_state)
+            print_tensor_info("Geosphere", geosphere_state)
         
         return physical_state, biosphere_state, geosphere_state
     
@@ -195,86 +160,60 @@ class EarthSystemSimulation:
         biosphere_state: torch.Tensor,
         geosphere_state: torch.Tensor
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        """
-        Run one timestep of the simulation.
-        
-        Args:
-            physical_state: Current physical system state
-            biosphere_state: Current biosphere state
-            geosphere_state: Current geosphere state
-            
-        Returns:
-            Tuple of updated states
-        """
-        if self.debug:
-            print("\nStarting timestep:")
-            print_tensor_info("Input physical state", physical_state)
-            print_tensor_info("Input biosphere state", biosphere_state)
-            print_tensor_info("Input geosphere state", geosphere_state)
-            
-        # Check which components should update
         updates = self.synchronizer.step()
         
-        # Physical system update (every timestep)
+        if self.debug:
+            print(f"\nTimestep updates: {updates}")
+        
+        # Physical system update
         if updates['physical']:
-            # Prepare input for PINN (add sequence dimension)
-            physical_input = physical_state.unsqueeze(1)  # [batch, seq=1, channels, height, width]
+            physical_input = physical_state.unsqueeze(1)
             
-            # Update physical state using PINN
             with torch.no_grad():
                 physical_pred, _ = self.physical(physical_input)
-                physical_state = physical_pred.squeeze(1)  # Remove sequence dimension
+                physical_state = physical_pred.squeeze(1)
             
-            # Get feedback from other components
             physical_feedback = self.data_flow.compute_feedback('physical')
             if physical_feedback is not None:
                 physical_state = physical_state + physical_feedback
                 
-            # Validate and update state
             if self.data_flow.validate_state('physical', physical_state):
                 self.data_flow.update_state('physical', physical_state)
         
         # Biosphere update
         if updates['biosphere']:
-            # Get relevant physical state information
+            # Prepare biosphere input with proper dimensions
             bio_input = self._prepare_biosphere_input(biosphere_state, physical_state)
             
             if bio_input is not None:
-                # Sample action from policy
                 with torch.no_grad():
                     bio_action = self.biosphere.act(bio_input)[0]
                 
-                # Update biosphere state
                 biosphere_state = biosphere_state + bio_action
                 
-                # Validate and update state
                 if self.data_flow.validate_state('biosphere', biosphere_state):
                     self.data_flow.update_state('biosphere', biosphere_state)
         
-        # Geosphere update (least frequent)
+        # Geosphere update
         if updates['geosphere']:
-            # Get relevant physical state information
             geo_input = self.data_flow.get_state_for_component('physical', 'geosphere')
             
             if geo_input is not None:
-                # Sample action from policy
                 with torch.no_grad():
                     geo_action = self.geosphere.act(
                         torch.cat([geosphere_state, geo_input], dim=-1)
                     )[0]
                 
-                # Update geosphere state
                 geosphere_state = geosphere_state + geo_action
                 
-                # Validate and update state
                 if self.data_flow.validate_state('geosphere', geosphere_state):
                     self.data_flow.update_state('geosphere', geosphere_state)
         
         if self.debug:
-            print("\nTimestep complete:")
-            print_tensor_info("Updated physical state", physical_state)
-            print_tensor_info("Updated biosphere state", biosphere_state)
-            print_tensor_info("Updated geosphere state", geosphere_state)
+            print("\nUpdated states:")
+            print_tensor_info("Physical", physical_state)
+            print_tensor_info("Biosphere", biosphere_state)
+            print_tensor_info("Geosphere", geosphere_state)
         
         return physical_state, biosphere_state, geosphere_state
     
@@ -283,16 +222,6 @@ class EarthSystemSimulation:
         num_steps: int,
         save_frequency: int = 100
     ) -> Dict[str, List]:
-        """
-        Run the full simulation.
-        
-        Args:
-            num_steps: Number of timesteps to simulate
-            save_frequency: How often to save states
-            
-        Returns:
-            Dictionary containing simulation trajectory
-        """
         # Initialize states
         physical_state, biosphere_state, geosphere_state = self._initialize_states()
         
@@ -331,7 +260,6 @@ class EarthSystemSimulation:
         return trajectory
 
 def main():
-    """Main function to run the simulation."""
     import argparse
     
     parser = argparse.ArgumentParser(description='Run Earth system simulation')
@@ -351,7 +279,7 @@ def main():
     # Initialize simulation
     sim = EarthSystemSimulation(args.config, debug=args.debug)
     
-    # Run simulation with gradient disabled
+    # Run simulation
     with torch.no_grad():
         trajectory = sim.run_simulation(args.steps, args.save_freq)
     
