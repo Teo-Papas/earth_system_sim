@@ -86,18 +86,34 @@ class EarthSystemSimulation:
 
     def _initialize_states(self) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """Initialize system states from config."""
+        print("\nDEBUG - Initializing States:")
+        print(f"Physical input dim: {self.config['physical_system']['input_dim']}")
+        print(f"Biosphere state dim: {self.config['biosphere']['state_dim']}")
+        print(f"Geosphere state dim: {self.config['geosphere']['state_dim']}")
+        
         physical_state = torch.zeros(
             (1, self.config['physical_system']['input_dim']),
             device=self.device
         )
+        print(f"Initialized physical state shape: {physical_state.shape}")
+        
         biosphere_state = torch.zeros(
             (1, self.config['biosphere']['state_dim']),
             device=self.device
         )
+        print(f"Initialized biosphere state shape: {biosphere_state.shape}")
+        
         geosphere_state = torch.zeros(
             (1, self.config['geosphere']['state_dim']),
             device=self.device
         )
+        print(f"Initialized geosphere state shape: {geosphere_state.shape}")
+        
+        # Print policy network input dimensions
+        print("\nDEBUG - Policy Network Dimensions:")
+        print(f"Biosphere first layer input dim: {self.biosphere.actor[0].weight.shape[1]}")
+        print(f"Geosphere first layer input dim: {self.geosphere.actor[0].weight.shape[1]}")
+        
         return physical_state, biosphere_state, geosphere_state
         
     def _initialize_integration(self):
@@ -147,12 +163,16 @@ class EarthSystemSimulation:
         # Physical system update (every timestep)
         if updates['physical']:
             # Prepare input for PINN (add sequence dimension)
-            physical_input = physical_state.unsqueeze(1)  # [batch, seq=1, channels, height, width]
+            print("\nDEBUG - Physical Update:")
+            print(f"Physical state shape: {physical_state.shape}")
+            physical_input = physical_state.unsqueeze(1)
+            print(f"Physical input shape after unsqueeze: {physical_input.shape}")
             
             # Update physical state using PINN
             with torch.no_grad():
                 physical_pred, _ = self.physical(physical_input)
-                physical_state = physical_pred.squeeze(1)  # Remove sequence dimension
+                physical_state = physical_pred.squeeze(1)
+                print(f"Physical state shape after PINN: {physical_state.shape}")
             
             # Get feedback from other components
             physical_feedback = self.data_flow.compute_feedback('physical')
@@ -166,16 +186,23 @@ class EarthSystemSimulation:
         # Biosphere update
         if updates['biosphere']:
             # Get relevant physical state information
+            print("\nDEBUG - Biosphere Update:")
+            print(f"Biosphere state shape: {biosphere_state.shape}")
             bio_input = self.data_flow.get_state_for_component('physical', 'biosphere')
             
             if bio_input is not None:
-                # Update biosphere state based on physical input
-                bio_feedback = torch.tanh(bio_input @ self.biosphere.actor[0].weight[:5].t())
-                biosphere_state = biosphere_state + 0.1 * bio_feedback
+                print(f"Bio input shape from physical: {bio_input.shape}")
+                print(f"Biosphere actor first layer weight shape: {self.biosphere.actor[0].weight.shape}")
                 
-                # Sample action from policy using only biosphere state
+                # Sample action from policy using biosphere state
                 with torch.no_grad():
-                    bio_action = self.biosphere.act(biosphere_state)[0]
+                    print("Attempting policy network forward pass...")
+                    try:
+                        bio_action = self.biosphere.act(biosphere_state)[0]
+                        print(f"Bio action shape: {bio_action.shape}")
+                    except Exception as e:
+                        print(f"Error in biosphere policy: {str(e)}")
+                        raise
                 
                 # Update biosphere state
                 biosphere_state = biosphere_state + bio_action
@@ -187,16 +214,23 @@ class EarthSystemSimulation:
         # Geosphere update (least frequent)
         if updates['geosphere']:
             # Get relevant physical state information
+            print("\nDEBUG - Geosphere Update:")
+            print(f"Geosphere state shape: {geosphere_state.shape}")
             geo_input = self.data_flow.get_state_for_component('physical', 'geosphere')
             
             if geo_input is not None:
-                # Update geosphere state based on physical input
-                geo_feedback = torch.tanh(geo_input @ self.geosphere.actor[0].weight[:5].t())
-                geosphere_state = geosphere_state + 0.1 * geo_feedback
+                print(f"Geo input shape from physical: {geo_input.shape}")
+                print(f"Geosphere actor first layer weight shape: {self.geosphere.actor[0].weight.shape}")
                 
-                # Sample action from policy using only geosphere state
+                # Sample action from policy using geosphere state
                 with torch.no_grad():
-                    geo_action = self.geosphere.act(geosphere_state)[0]
+                    print("Attempting policy network forward pass...")
+                    try:
+                        geo_action = self.geosphere.act(geosphere_state)[0]
+                        print(f"Geo action shape: {geo_action.shape}")
+                    except Exception as e:
+                        print(f"Error in geosphere policy: {str(e)}")
+                        raise
                 
                 # Update geosphere state
                 geosphere_state = geosphere_state + geo_action
