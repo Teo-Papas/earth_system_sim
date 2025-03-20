@@ -6,7 +6,7 @@ grid_width: 16
 
 # Physical system configuration
 physical_system:
-  input_dim: 5  # temperature, pressure, humidity, u_wind, v_wind
+  input_dim: 5  # [density, temperature, pressure, u_velocity, v_velocity]
   hidden_dims: [32, 32]
   kernel_size: 3
   num_layers: 2
@@ -15,17 +15,24 @@ physical_system:
 
 # Biosphere system configuration
 biosphere:
-  state_dim: 4  # vegetation, soil_moisture, carbon_flux, biodiversity
-  action_dim: 2  # growth_rate, resource_allocation
-  hidden_dims: [64, 32]
+  # State dimensions
+  state_dim: 4  # [vegetation_cover, soil_moisture, temperature_mean, pressure_mean]
+  action_dim: 2  # [growth_rate, water_consumption]
+  hidden_dims: [32, 32]
   learning_rate: 0.001
   reward_scale: 1.0
+  
+  # Initial ranges
+  vegetation_range: [0.0, 1.0]
+  soil_moisture_range: [0.0, 1.0]
+  growth_rate_range: [-0.1, 0.1]
+  water_consumption_range: [0.0, 0.1]
 
 # Geosphere system configuration
 geosphere:
-  state_dim: 3  # elevation, erosion_rate, soil_composition
-  action_dim: 2  # erosion_resistance, deposition_rate
-  hidden_dim: 32  
+  state_dim: 3  # [elevation, erosion_rate, soil_composition]
+  action_dim: 2  # [erosion_resistance, deposition_rate]
+  hidden_dim: 32
   memory_size: 1000
   batch_size: 32
   learning_rate: 0.0001
@@ -52,6 +59,7 @@ simulation:
   
   # Initial conditions
   initial_conditions:
+    # Physical system
     temperature_mean: 288.0  # K
     temperature_std: 5.0
     pressure_mean: 101325.0  # Pa
@@ -61,11 +69,13 @@ simulation:
     wind_speed_mean: 5.0  # m/s
     wind_speed_std: 2.0
     
+    # Biosphere system
     vegetation_cover_mean: 0.3
     vegetation_cover_std: 0.1
     soil_moisture_mean: 0.4
     soil_moisture_std: 0.1
     
+    # Geosphere system
     elevation_mean: 500.0  # m
     elevation_std: 100.0
     
@@ -87,23 +97,9 @@ simulation:
     min_elevation: 0.0
     max_elevation: 8848.0  # Mt. Everest height
 
-# Visualization parameters
-visualization:
-  # Update frequency
-  update_freq: 10
-  
-  # Color maps
-  colormaps:
-    temperature: 'RdBu_r'
-    vegetation: 'YlGn'
-    elevation: 'terrain'
-  
-  # Animation parameters
-  animation:
-    fps: 30
-    duration: 10  # seconds
-    
-  # Plot parameters
-  plot:
-    dpi: 100
-    figsize: [10, 6]
+# Debug parameters
+debug:
+  print_frequency: 10  # Steps between debug outputs
+  save_states: true
+  check_constraints: true
+  plot_live_updates: false
