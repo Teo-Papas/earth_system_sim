@@ -70,18 +70,16 @@ class EarthSystemSimulation:
             num_layers=self.config['physical_system']['num_layers']
         ).to(self.device)
         
-        # Biosphere system - combined state dimension includes physical input
-        biosphere_input_dim = self.config['biosphere']['state_dim'] + self.config['physical_system']['input_dim']
+        # Biosphere system
         self.biosphere = BiospherePolicy(
-            state_dim=biosphere_input_dim,  # Combined dimensions for state + physical input
+            state_dim=self.config['biosphere']['state_dim'],  # Original state dimensions
             action_dim=self.config['biosphere']['action_dim'],
             hidden_dims=self.config['biosphere']['hidden_dims']
         ).to(self.device)
         
-        # Geosphere system - combined state dimension includes physical input
-        geosphere_input_dim = self.config['geosphere']['state_dim'] + self.config['physical_system']['input_dim']
+        # Geosphere system
         self.geosphere = GeospherePolicy(
-            state_dim=geosphere_input_dim,  # Combined dimensions for state + physical input
+            state_dim=self.config['geosphere']['state_dim'],  # Original state dimensions
             action_dim=self.config['geosphere']['action_dim'],
             hidden_dim=self.config['geosphere']['hidden_dim']
         ).to(self.device)
@@ -171,11 +169,13 @@ class EarthSystemSimulation:
             bio_input = self.data_flow.get_state_for_component('physical', 'biosphere')
             
             if bio_input is not None:
-                # Sample action from policy
+                # Update biosphere state based on physical input
+                bio_feedback = torch.tanh(bio_input @ self.biosphere.actor[0].weight[:5].t())
+                biosphere_state = biosphere_state + 0.1 * bio_feedback
+                
+                # Sample action from policy using only biosphere state
                 with torch.no_grad():
-                    bio_action = self.biosphere.act(
-                        torch.cat([biosphere_state, bio_input], dim=-1)
-                    )[0]
+                    bio_action = self.biosphere.act(biosphere_state)[0]
                 
                 # Update biosphere state
                 biosphere_state = biosphere_state + bio_action
@@ -190,11 +190,13 @@ class EarthSystemSimulation:
             geo_input = self.data_flow.get_state_for_component('physical', 'geosphere')
             
             if geo_input is not None:
-                # Sample action from policy
+                # Update geosphere state based on physical input
+                geo_feedback = torch.tanh(geo_input @ self.geosphere.actor[0].weight[:5].t())
+                geosphere_state = geosphere_state + 0.1 * geo_feedback
+                
+                # Sample action from policy using only geosphere state
                 with torch.no_grad():
-                    geo_action = self.geosphere.act(
-                        torch.cat([geosphere_state, geo_input], dim=-1)
-                    )[0]
+                    geo_action = self.geosphere.act(geosphere_state)[0]
                 
                 # Update geosphere state
                 geosphere_state = geosphere_state + geo_action
